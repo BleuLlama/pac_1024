@@ -1,0 +1,8 @@
+.DS_Store
+AGEBAK
+*.ihx
+*.map
+*.rel
+*.lst
+
+*.swp

@@ -1,0 +1,4 @@
+# program space
+begin program
+0x0000  0x0400  pacman.1k	program_1
+end
