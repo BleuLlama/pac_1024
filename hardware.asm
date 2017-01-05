@@ -25,24 +25,40 @@
 		p1_left         == 1
 		p1_right        == 2
 		p1_down         == 3
+		p1_up_mask	== 0x01
+		p1_left_mask	== 0x02
+		p1_right_mask	== 0x04
+		p1_down_mask	== 0x08
         p2_port         == in1
 		p2_up           == 0
 		p2_left         == 1
 		p2_right        == 2
 		p2_down         == 3
+		p2_up_mask	== 0x01
+		p2_left_mask	== 0x02
+		p2_right_mask	== 0x04
+		p2_down_mask	== 0x08
         start_port      == in1
 		start1          == 5
 		start2          == 6
+		s1_mask		== 0x20
+		s2_mask		== 0x40
         coin_port       == in0
 		coin1           == 5
 		coin2           == 6
 		coin3           == 7
+		coin1_mask	== 0x20
+		coin2_mask	== 0x40
+		coin2_mask	== 0x80
         rack_port       == in0
 		racktest        == 4
+		racktest_mask	== 0x10
         svc_port        == in1
 		service         == 4
+		service_mask	== 0x10
         cab_port        == in1    
 		cabinet         == 7
+		cabinet_mask	== 0x80
 
         sprtMult        == 4
         sprtColor       == 1

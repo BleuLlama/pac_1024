@@ -1,5 +1,17 @@
-; example 1k file
+; 1k.asm
+; 
+; 1k for program, rom, proms, etc.
+; yorgle@gmail.com
+; 
+;  Kinda meant for the hackaday 1k challenge.
+;  Program, graphics, PROMS are all in this one file.
 
+; much of this has been dropped in from my
+; bleu-romtools/code/z80kernel/Core  project.  Some of it has been mangled
+; a little.  Some of it has been mangled a lot!
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 .area	.CODE (ABS)
 
@@ -16,6 +28,29 @@
 
 	incval		== RAMLIST+4
 
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ; input management
+
+            ; input vals
+        INPVALS		== RAMLIST+6
+
+        Cp1up           == INPVALS+0
+        Cp1dn           == INPVALS+1
+        Cp1lt           == INPVALS+2
+        Cp1rt           == INPVALS+3
+
+        Cstart1         == INPVALS+4
+        Cstart2         == INPVALS+5
+	
+    ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    ; runtime stuff
+
+	RUNRAM		== INPVALS+6
+
+	XPos		== RUNRAM+0
+	YPos		== RUNRAM+1
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; text colors
 	color_black	== 0x00
@@ -31,9 +66,33 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 .org	0x0000 	; RST 0 / boot vector
-	di
-	jp	.start
+
+; startup code for pac-man hardware (bare bones)
+; usually, 0x0000 contains a jump to this, so that we can use other
+; reset vectors, but we're not doing that here.  Instead we're putting it 
+; directly here to save rom space.
+
+	di			; disable interrupts
+
+	ld	sp, #(stack)	; set up the stack
+	ld	a, #0xff
+	out	(0), a		; set interrupt vector
+
+	xor	a
+	ld	(watchdog), a	; kick the watchdog
+
+	im	1		; Interrupt mode 1
+	ld	a, #0x01
+	ld	(irqen), a	; enable hardware interrupts
+	ei			; enable cpu interrupts
+
+	call	cls		; clear the screen
+	call	initgame	; initialize the game
+
+	jp	main		; and.. GO!
 
 .org 	0x0038	; interrupt routine, called 60x/second
 .interrupt:
@@ -48,12 +107,13 @@
         inc     bc              ; bc++
         ld      (timer), bc     ; timer = bc
 
-        ;call    atCheck         ; check for events
+        ;call   atCheck         ; check for events
         ;call   ptInterrupt     ; update music
-        ;call    inputpoll       ; poll the input centralizer
+        call    inputpoll       ; poll the input centralizer
 
         xor     a
-        ld      (watchdog), a   ; kick the dog
+        ld      (watchdog), a   ; kick the dog (disable watchdog)
+
         ld      a, #0x01        ; a = 1
         ld      (irqen), a      ; enable the external interrupt mechanism
 
@@ -66,24 +126,137 @@
 .org	0x0066 	; NMI vector, not used
 	retn	; return for now
 
-; startup code for pac-man hardware (bare bones)
-.start:
-	di
-	ld	sp, #(stack)
-	ld	a, #0xff
-	out	(0), a		; set interrupt vector
-	xor	a
-	ld	(watchdog), a	; kick the watchdog
-	im	1		; Interrupt mode 1
-	ld	a, #0x01
-	ld	(irqen), a
-	ei
-	jp	main
-
+initgame:
+	ld	a, #0x80
+	ld	(XPos), a
+	ld	(YPos), a
+	ret
 
 main:
-	call	cls
+	call	checkInputs
+	call	drawBg
+	call	drawSprites
 	jr	main
+
+
+drawBg:
+	; draw input stuff
+        ld      hl, #(colram + 0x380)	; p1 start
+	ld	a, #color_red
+	ld	(hl), a
+        ld      hl, #(colram + 0x340)	; p2 start
+	ld	(hl), a
+	ld	hl, #(colram + 0x301-1)	; Up
+	ld	(hl), a
+	ld	hl, #(colram + 0x301+1)	; Down
+	ld	(hl), a
+	ld	hl, #(colram + 0x301+0x20)	; Left
+	ld	(hl), a
+	ld	hl, #(colram + 0x301-0x20)	; Right
+	ld	(hl), a
+
+
+	; draw dashboard text
+	ld	hl, #(vidram + 0x380)	; p1 start
+        ld      a, (Cstart1)
+	add 	#'0
+	ld	(hl), a
+
+	ld	hl, #(vidram + 0x340)	; p2 start
+        ld      a, (Cstart2)
+	add 	#'0
+	ld	(hl), a
+
+	ld	hl, #(vidram + 0x301-1)	; Up
+        ld	a, (Cp1up)
+	add 	#'0
+	ld	(hl), a
+
+	ld	hl, #(vidram + 0x301+1)	; Down
+        ld	a, (Cp1dn)
+	add 	#'0
+	ld	(hl), a
+
+	ld	hl, #(vidram + 0x301+0x20)	; Left
+        ld	a, (Cp1lt)
+	add 	#'0
+	ld	(hl), a
+
+	ld	hl, #(vidram + 0x301-0x20)	; Right
+        ld	a, (Cp1rt)
+	add 	#'0
+	ld	(hl), a
+	ret
+
+
+drawSprites:
+	; draw the sprites
+	SpriteNo 	== 0x0a ; circle
+
+	; sprite 0 X
+	ld	hl, #spritecoords + sprite0 + spriteX
+	ld	a, (XPos)
+	ld	(hl), a
+
+	; sprite 0 Y
+	ld	hl, #spritecoords + sprite0 + spriteY
+	ld	a, (YPos)
+	ld	(hl),a
+
+	; sprite 0 gfx
+	ld	hl, #sprtbase + sprite0 + sprtIndex
+	ld	a, #((SpriteNo * sprtMult) + 0 + 0)
+	ld	(hl), a
+
+	; sprite 0 color
+	ld	hl, #sprtbase + sprite0 + sprtColor
+	ld	a, #1 			; color 1
+	ld	(hl), a
+	ret
+
+checkInputs:
+	ld	a, (Cp1up)
+	cp	#0x00
+	call	nz, decY
+	
+	ld	a, (Cp1dn)
+	cp	#0x00
+	call	nz, incY
+	
+	ld	a, (Cp1lt)
+	cp	#0x00
+	call	nz, decX
+	
+	ld	a, (Cp1rt)
+	cp	#0x00
+	call	nz, incX
+	ret
+	
+
+incX:
+	ld	a, (XPos)
+	inc	a
+	ld	(XPos), a
+	ret
+
+decX:
+	ld	a, (XPos)
+	dec	a
+	ld	(XPos), a
+	ret
+
+incY:
+	ld	a, (YPos)
+	inc	a
+	ld	(YPos), a
+	ret
+
+decY:
+	ld	a, (YPos)
+	dec	a
+	ld	(YPos), a
+	ret
+
 
 
 ; memset256
@@ -128,18 +301,19 @@ cls:
 
         ; hl is at the base of color ram now.
         ld      hl, #(colram)   ; base of color ram
-        ;ld      a, #0x00        ; clear the screen to 0x00 (black)
-	ld	a, #color_cyan
+        ld      a, #0x00        ; clear the screen to 0x00 (black)
+	;ld	a, #color_cyan
         ld      b, #0x04        ; need to set 256 bytes 4 times.
         call    memsetN         ; do it.
 
-	ld	a, (timer)
-	srl	a
-	srl	a
-	srl	a
-	srl	a
-	and	#0x0F
-	add	a, #'0
+	xor	a
+	;ld	a, (timer)
+	;srl	a
+	;srl	a
+	;srl	a
+	;srl	a
+	;and	#0x0F
+	;add	a, #'0
 
         ld      hl, #(vidram)   ; base of video ram
         ld      b, #0x04        ; need to set 256 bytes 4 times.
@@ -149,6 +323,91 @@ cls:
         pop     af
         pop     hl
         ret                     ; return
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; input routines
+
+inputpoll:
+        push    af
+        push    hl
+	push	bc
+        ;call    .ip_coins       ; coin slots
+        call    .ip_start       ; start buttons
+        call    .ip_p1joy       ; player 1 stick
+        ;call    .ip_p2joy       ; player 2 stick
+	pop	bc
+        pop     hl
+        pop     af
+        ret
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; start buttons
+
+.ip_start:
+        ld      a, (start_port)
+	ld	b, a			; store a aside.
+
+	ld	c, #s1_mask
+	and	a, c
+	xor	a, c
+	srl	a
+	srl	a
+	srl	a
+	srl	a
+	srl	a
+	ld	(Cstart1), a
+
+	ld	a, b
+	ld	c, #s2_mask
+	and	a, c
+	xor	a, c
+	srl	a
+	srl	a
+	srl	a
+	srl	a
+	srl	a
+	srl	a
+	ld	(Cstart2), a
+
+        ret
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; input player 1 checker
+
+.ip_p1joy:
+	ld	a, (p1_port)
+	ld	b, a			; store it aside
+
+	; but we'll use this "zero if idle" version:
+	ld	c, #p1_up_mask
+	and 	a, c
+	xor	a, c
+	ld	(Cp1up), a
+
+	ld	a, b
+	ld	c, #p1_down_mask
+	and 	a, c
+	xor	a, c
+	srl	a
+	srl	a
+	srl	a
+	ld	(Cp1dn), a
+
+	ld	a, b
+	ld 	c, #p1_left_mask
+	and 	a, c
+	xor	a, c
+	srl	a
+	ld	(Cp1lt), a
+
+	ld	a, b
+	ld	c, #p1_right_mask
+	and 	a, c
+	xor	a, c
+	srl	a
+	srl	a
+	ld	(Cp1rt), a
+	ret
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -245,25 +504,28 @@ cls:
 	.byte 0x00, 0xcc, 0x22, 0x22, 0x22, 0xee, 0x22, 0x00 ; B
 	.byte 0x00, 0x66, 0x99, 0x99, 0x99, 0xff, 0x88, 0x00
 
+;	.byte 0x00, 0x44, 0x22, 0x22, 0x22, 0x44, 0x88, 0x00 ; C
+;	.byte 0x00, 0x44, 0x88, 0x88, 0x88, 0x44, 0x33, 0x00
 	; all 0
 	.byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 	.byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
+;	.byte 0x00, 0x88, 0x44, 0x22, 0x22, 0xee, 0x22, 0x00 ; D
+;	.byte 0x00, 0x33, 0x44, 0x88, 0x88, 0xff, 0x88, 0x00
 	; all 1
 	.byte 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f
 	.byte 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f
+
+;	.byte 0x00, 0x22, 0x22, 0x22, 0x22, 0x22, 0xee, 0x00 ; E
+;	.byte 0x00, 0x88, 0x88, 0x99, 0x99, 0x99, 0xff, 0x00
 	; all 2
 	.byte 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0
 	.byte 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0
+
+;	.byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xee, 0x00 ; F
+;	.byte 0x00, 0x88, 0x88, 0x99, 0x99, 0x99, 0xff, 0x00
 	; all 3
 	.byte 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 	.byte 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
 
-;	.byte 0x00, 0x44, 0x22, 0x22, 0x22, 0x44, 0x88, 0x00 ; C
-;	.byte 0x00, 0x44, 0x88, 0x88, 0x88, 0x44, 0x33, 0x00
-;	.byte 0x00, 0x88, 0x44, 0x22, 0x22, 0xee, 0x22, 0x00 ; D
-;	.byte 0x00, 0x33, 0x44, 0x88, 0x88, 0xff, 0x88, 0x00
-;	.byte 0x00, 0x22, 0x22, 0x22, 0x22, 0x22, 0xee, 0x00 ; E
-;	.byte 0x00, 0x88, 0x88, 0x99, 0x99, 0x99, 0xff, 0x00
-;	.byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xee, 0x00 ; F
-;	.byte 0x00, 0x88, 0x88, 0x99, 0x99, 0x99, 0xff, 0x00
 .bound	0x0400 ; 1 kilobyte
