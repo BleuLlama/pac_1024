@@ -6,3 +6,5 @@ AGEBAK
 *.lst
 
 *.swp
+pacman/
+pacman.zip
