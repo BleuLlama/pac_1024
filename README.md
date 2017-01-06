@@ -93,17 +93,20 @@ digits are all jumbled together.
 
 I should also note that the color PROM and palette PROMs are extracted
 from the 1k ROM as well.  The 16 byte Color PROM is extracted
-starting at 496 bytes and the 256 byte palette PROM is extracted starting
-at 512 bytes
+starting at 592 bytes and the 256 byte palette PROM is extracted
+starting at 608 bytes.  If you use the F4 browser of Mame, you'll 
+also see here that the Color PROM is is mostly garbage.  I needed 
+more space for the program, so the Color PROM is inaccurate with 
+the original game.
 
 Sound ROMs are extracted starting at the beginning of the ROM since
 we don't care about those right now anyway.
 
-All of this is taken care of in the Makefile, through the use of 
+All of this is taken care of in the Makefile, through the use of
 'dd' on the assembled 1kbyte ROM file.
 
-All of this adds up.  We end up with about 495 bytes to work with
-for our program.  Just under HALF of the 1k alotted! 
+All of this adds up.  We end up with right around HALF of the
+available 1 kilobyte alotted!
 
 I did this mainly because I wanted to see if I could, since I'm
 pretty sure it's never been done before (and with good reason).
@@ -112,6 +115,13 @@ Sadly, with everything going on in the past month, I have not been
 able to make a full game out if this, but instead made this little
 toy that moves a couple sprites around the screen while you move
 the joystick.
+
+If you want to try this in a real Pac-Man arcade machine, you do
+not need to replace any of the PROMs, as the colors and palette are
+subsets of the "real" PROMs, and the sound PROMs are ignored. The
+character ROM (5E) should be fine, and the sprite ROM (5F) can be
+left in place.  In fact, all you need to program is the 6E ROM and
+drop that one on the board, and you should see something. ;)
 
 Anyway, it was fun to make.  Have a great day!
 

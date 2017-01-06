@@ -49,7 +49,15 @@
 
 	XPos		== RUNRAM+0
 	YPos		== RUNRAM+1
+	XCnt		== RUNRAM+2
+	YCnt		== RUNRAM+3
 
+	Sprt		== RUNRAM+4
+
+	    SPRTCRSR	== 0x0A * sprtMult ; shifted over for X/Y flip
+	    SPRTCIRCLE 	== 0x0B * sprtMult ; shifted over for X/Y flip
+
+	    MOVEDESCALE == 0x1F	; should be "all bits set", smaller = faster
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; text colors
@@ -94,6 +102,8 @@
 
 	jp	main		; and.. GO!
 
+; NOTE: ~30 wasted bytes here!
+
 .org 	0x0038	; interrupt routine, called 60x/second
 .interrupt:
         di                      ; disable processor interrupts
@@ -122,14 +132,25 @@
         ei                      ; enable processor interrupts
         reti                    ; return from interrupt routine
 
+; NOTE: ~12 wasted bytes here!
 
 .org	0x0066 	; NMI vector, not used
 	retn	; return for now
 
 initgame:
+	; start the cursor in the center of the screen
 	ld	a, #0x80
 	ld	(XPos), a
 	ld	(YPos), a
+
+	; start these values at 0
+	xor	a
+	ld	(XCnt), a
+	ld	(YCnt), a
+
+	; default sprite
+	ld	a, #SPRTCRSR
+	ld	(Sprt), a
 	ret
 
 main:
@@ -191,7 +212,6 @@ drawBg:
 
 drawSprites:
 	; draw the sprites
-	SpriteNo 	== 0x0a ; circle
 
 	; sprite 0 X
 	ld	hl, #spritecoords + sprite0 + spriteX
@@ -205,7 +225,8 @@ drawSprites:
 
 	; sprite 0 gfx
 	ld	hl, #sprtbase + sprite0 + sprtIndex
-	ld	a, #((SpriteNo * sprtMult) + 0 + 0)
+	ld	a, (Sprt) ; stored sprite number
+	;ld	a, #((SpriteNo * sprtMult) + 0 + 0)
 	ld	(hl), a
 
 	; sprite 0 color
@@ -215,43 +236,104 @@ drawSprites:
 	ret
 
 checkInputs:
-	ld	a, (Cp1up)
+	ld	a, (Cstart1)
 	cp	#0x00
-	call	nz, decY
+	call	nz, select1
 	
-	ld	a, (Cp1dn)
+	ld	a, (Cstart2)
+	cp	#0x00
+	call	nz, select2
+	
+	ld	a, (Cp1up)
 	cp	#0x00
 	call	nz, incY
 	
+	ld	a, (Cp1dn)
+	cp	#0x00
+	call	nz, decY
+	
 	ld	a, (Cp1lt)
 	cp	#0x00
-	call	nz, decX
+	call	nz, incX
 	
 	ld	a, (Cp1rt)
 	cp	#0x00
-	call	nz, incX
+	call	nz, decX
 	ret
-	
+
+; select sprite 1
+select1:
+	ld	a, #SPRTCRSR
+	ld	(Sprt), a
+	ret
+
+; select sprite 2
+select2:
+	ld	a, #SPRTCIRCLE
+	ld	(Sprt), a
+	ret
 
 incX:
+	; inc the X counter
+	ld	a, (XCnt)
+	inc	a
+	ld	(XCnt), a
+	; now check for bounds
+	and	#MOVEDESCALE
+	cp	#0x00		; if( XCnt & 0x0E == 0x00 )...
+	ret	nz		; no, return
+	
+	; actually move it
 	ld	a, (XPos)
 	inc	a
 	ld	(XPos), a
 	ret
 
 decX:
+	; dec the X counter
+	ld	a, (XCnt)
+	dec	a
+	ld	(XCnt), a
+	; now check for bounds
+	and	#MOVEDESCALE
+	cp	#0x00		; if( XCnt & 0x0E == 0x00 )...
+	ret	nz		; no, return
+	
+	; actually move it.
 	ld	a, (XPos)
 	dec	a
-	ld	(XPos), a
+	ld	(XPos),a
 	ret
 
 incY:
+	; inc the Y counter
+	ld	a, (YCnt)
+	inc	a
+	ld	(YCnt), a
+	; now check for bounds
+	and	#MOVEDESCALE
+	cp	#0x00		; if( XCnt & 0x0E == 0x00 )...
+	ret	nz		; no, return
+	
+	; actually move it
 	ld	a, (YPos)
 	inc	a
 	ld	(YPos), a
 	ret
 
 decY:
+	; dec the Y counter
+	ld	a, (YCnt)
+	dec	a
+	ld	(YCnt), a
+	; now check for bounds
+	and	#MOVEDESCALE
+	cp	#0x00		; if( XCnt & 0x0E == 0x00 )...
+	ret	nz		; no, return
+	
+
+
+	; actually move it
 	ld	a, (YPos)
 	dec	a
 	ld	(YPos), a
@@ -331,10 +413,8 @@ inputpoll:
         push    af
         push    hl
 	push	bc
-        ;call    .ip_coins       ; coin slots
         call    .ip_start       ; start buttons
         call    .ip_p1joy       ; player 1 stick
-        ;call    .ip_p2joy       ; player 2 stick
 	pop	bc
         pop     hl
         pop     af
@@ -344,81 +424,107 @@ inputpoll:
 ;; start buttons
 
 .ip_start:
-        ld      a, (start_port)
-	ld	b, a			; store a aside.
-
-	ld	c, #s1_mask
-	and	a, c
-	xor	a, c
-	srl	a
-	srl	a
-	srl	a
-	srl	a
-	srl	a
+	ld	a, #0x01
 	ld	(Cstart1), a
-
-	ld	a, b
-	ld	c, #s2_mask
-	and	a, c
-	xor	a, c
-	srl	a
-	srl	a
-	srl	a
-	srl	a
-	srl	a
-	srl	a
 	ld	(Cstart2), a
 
+	call	.ip_s1
+	call	.ip_s2
+	ret
+
+.ip_s1:
+        ld      a, (start_port)
+	and	a, #s1_mask
+	cp	#0x00
+	ret	z
+
+	xor	a
+	ld	(Cstart1), a
+	ret
+
+.ip_s2:
+	ld	a, (start_port)
+	and	a, #s2_mask
+	cp	#0x00
+	ret	z
+
+	xor	a
+	ld	(Cstart2), a
         ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; input player 1 checker
 
 .ip_p1joy:
-	ld	a, (p1_port)
-	ld	b, a			; store it aside
-
-	; but we'll use this "zero if idle" version:
-	ld	c, #p1_up_mask
-	and 	a, c
-	xor	a, c
+	; default these to 0x01, which is "pressed"
+	ld	a, #0x01
 	ld	(Cp1up), a
-
-	ld	a, b
-	ld	c, #p1_down_mask
-	and 	a, c
-	xor	a, c
-	srl	a
-	srl	a
-	srl	a
 	ld	(Cp1dn), a
-
-	ld	a, b
-	ld 	c, #p1_left_mask
-	and 	a, c
-	xor	a, c
-	srl	a
 	ld	(Cp1lt), a
-
-	ld	a, b
-	ld	c, #p1_right_mask
-	and 	a, c
-	xor	a, c
-	srl	a
-	srl	a
 	ld	(Cp1rt), a
+
+	; these will clear the value if it's not pressed.
+	call	.joy1_up
+	call	.joy1_down
+	call	.joy1_left
+	call	.joy1_right
 	ret
 
+.joy1_up:
+	ld	a, (p1_port)
+	and	#p1_up_mask
+	cp	#0x00
+	ret	z
+
+	xor	a
+	ld	(Cp1up),a
+	ret
+
+
+.joy1_down:
+	ld	a, (p1_port)
+	and	#p1_down_mask
+	cp	#0x00
+	ret	z
+
+	xor	a
+	ld	(Cp1dn),a
+	ret
+
+.joy1_left:
+	ld	a, (p1_port)
+	and	#p1_left_mask
+	cp	#0x00
+	ret	z
+
+	xor	a
+	ld	(Cp1lt),a
+	ret
+
+.joy1_right:
+	ld	a, (p1_port)
+	and	#p1_right_mask
+	cp	#0x00
+	ret	z
+
+	xor	a
+	ld	(Cp1rt),a
+	ret
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; ROM data extracted for use elsewhere:
 
-.org 0x1f0 ; 480 bytes
+NUMPALS == 8
+
+
+.org 0x0280 - (4 * NUMPALS) - 16
+OFFSET7F == .
 ; Color PROM - 82s123.7f (standard Pac-Man values)
 	.byte 0x00, 0x07, 0x66, 0xef, 0x00, 0xf8, 0xea, 0x6f
 	.byte 0x00, 0x3f, 0x00, 0xc9, 0x38, 0xaa, 0xaf, 0xf6
 
-.org 0x0200
+.org 0x0280 - (4 * NUMPALS)
+OFFSET4A == .
 ; palette PROM - 82s126.4a (standard Pac-Man values values)
         .byte 0x00, 0x00, 0x00, 0x00  ; 00	black	black	black	black
         .byte 0x00, 0x0f, 0x0b, 0x01  ; 01	black	white	blue	red
@@ -428,6 +534,7 @@ inputpoll:
         .byte 0x00, 0x0f, 0x0b, 0x05  ; 05	black	white	blue	cyan
         .byte 0x00, 0x00, 0x00, 0x00  ; 06	-	-	-	-
         .byte 0x00, 0x0f, 0x0b, 0x07  ; 07	black	white	blue	orange
+.if 0
         .byte 0x00, 0x0b, 0x01, 0x09  ; 08	black	blue	red	yellow
         .byte 0x00, 0x00, 0x00, 0x00  ; 09	-	-	-	-
         .byte 0x00, 0x00, 0x00, 0x00  ; 0a	-	-	-	-
@@ -452,10 +559,20 @@ inputpoll:
         .byte 0x00, 0x0f, 0x0b, 0x0e  ; 1d	black	white	blue	peach
         .byte 0x00, 0x0e, 0x00, 0x0f  ; 1e	black	peach	black	white
         .byte 0x00, 0x00, 0x00, 0x00  ; 1f	-	-	-	-
-
-
+.endif
 
 .org 0x0280
+; amiga 2.0 cursor sprite
+	.byte 0x00, 0x00, 0x00, 0x88, 0x80, 0x00, 0x00, 0x00
+	.byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	.byte 0x00, 0x00, 0x00, 0x00, 0x13, 0x13, 0x37, 0x37
+	.byte 0x00, 0x00, 0x00, 0x01, 0x13, 0x36, 0x6c, 0xc8
+	.byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	.byte 0x00, 0x00, 0x01, 0x01, 0x13, 0x12, 0x00, 0x00
+	.byte 0x7f, 0x7f, 0xff, 0xfc, 0xc0, 0x00, 0x00, 0x00
+	.byte 0xff, 0xfc, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00
+
+.org 0x02c0
 ; circle sprite
 	.byte 0x00, 0x00, 0x08, 0x0c, 0x0e, 0x86, 0xc3, 0xc3
 	.byte 0x00, 0x00, 0x01, 0x03, 0x07, 0x16, 0x3c, 0x3c
@@ -465,17 +582,6 @@ inputpoll:
 	.byte 0x3c, 0x3c, 0x16, 0x07, 0x03, 0x01, 0x00, 0x00
 	.byte 0xcc, 0xe6, 0xf3, 0xf1, 0x78, 0x3c, 0x0f, 0x03
 	.byte 0x33, 0x76, 0xfc, 0xf8, 0xe1, 0xc3, 0x0f, 0x0c
-
-.org 0x02c0
-; ghost sprite
-	.byte 0x00, 0xee, 0xcc, 0x88, 0xcc, 0xee, 0xee, 0x88
-	.byte 0x00, 0x00, 0x00, 0x11, 0x33, 0x33, 0x77, 0x77
-	.byte 0x00, 0x11, 0xbc, 0x3c, 0x0f, 0x8f, 0xff, 0xff
-	.byte 0x00, 0xff, 0xff, 0x7f, 0x7f, 0xff, 0xff, 0xff
-	.byte 0x88, 0xee, 0xee, 0xcc, 0x88, 0xcc, 0xee, 0x00
-	.byte 0x77, 0x77, 0x33, 0x33, 0x11, 0x00, 0x00, 0x00
-	.byte 0xbc, 0x3c, 0x0f, 0x8f, 0xff, 0xff, 0x11, 0x00
-	.byte 0xff, 0x7f, 0x7f, 0xff, 0xff, 0xff, 0xff, 0x00
 
 .org 0x0300
 ; 0..9,A-F  PET style

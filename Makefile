@@ -48,9 +48,15 @@ all: roms
 listing: $(LSTS)
 
 # roms: generate the rom files from the .ihx file via 'genroms'
+# determine these values from "make listing" and see where OFF7F and OFF4A are
 
-OFFSET7F := 496
-OFFSET4A := 512
+# color prom
+OFFSET7F := 592
+
+# palette prom
+OFFSET4A := 608
+
+# these two sound PROMS we don't care about
 OFFSET1M := 0
 OFFSET3M := 0
 
@@ -123,16 +129,22 @@ $(IHX): $(RELS)
 ################################################################################
 # utility targets
 
+offsets: $(TARGET).lst
+	@echo "Convert these HEX to decimal for the makefile..."
+	@grep OFFSET $<
+
 # clean: remove extra files
 clean:
-	rm -rf $(IHX) $(RELS) $(LSTS) $(MAPS) $(ROMFILES)
-	rm -rf $(ROMSET)
-	rm -f *.ihx *.rel *.lst *.map
+	@echo "Removing transients..."
+	@rm -rf $(IHX) $(RELS) $(LSTS) $(MAPS) $(ROMFILES)
+	@rm -rf $(ROMSET)
+	@rm -f *.ihx *.rel *.lst *.map
 .PHONY: clean
 
 # clobber: remove all generated files
 clobber: clean
-	rm -rf $(PROGROMFILESPATH) $(ROMSET).zip
+	@echo "Really removing stuff..."
+	@rm -rf $(PROGROMFILESPATH) $(ROMSET).zip
 .PHONY: clobber
 	
 # backup: tar-gzip the source tree
